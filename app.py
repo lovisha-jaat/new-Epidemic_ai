@@ -6,7 +6,10 @@ from sklearn.linear_model import LinearRegression
 import time
 
 app = Flask(__name__)
-CORS(app)
+from flask_cors import CORS # Must be at the top
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}) # This allows ALL frontends (like Lovable) to talk to it
 
 # Load global data once
 url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
