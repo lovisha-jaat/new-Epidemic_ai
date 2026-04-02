@@ -17,41 +17,54 @@ df = pd.read_csv(url)
 
 @app.route('/predict', methods=['GET'])
 def predict():
-    region = request.args.get('region', default='India')
+    # 1. Clean the input: remove spaces and make it lowercase for comparison
+    raw_region = request.args.get('region', default='India').strip()
     days_ahead = int(request.args.get('day', default=10))
 
-    # 1. Filter for country
-    country_df = df[df['Country/Region'] == region]
-    if country_df.empty:
-        return jsonify({"error": "Country not found"}), 404
+    # 2. Dataset "Translation" Map
+    # This fixes common user inputs to match the JHU dataset names
+    mapping = {
+        "usa": "US",
+        "united states": "US",
+        "uk": "United Kingdom",
+        "south korea": "Korea, South",
+        "uae": "United Arab Emirates",
+        "russia": "Russian Federation"
+    }
     
-    # 2. Get the last 100 days of data
-    # We sum in case a country has multiple provinces/states listed
-    full_series = country_df.iloc[:, 4:].sum()
-    y = full_series.values[-100:] 
-    
-    # 3. Create X as 0, 1, 2 ... 99
-    X = np.arange(len(y)).reshape(-1, 1)
+    # Check if the input needs a translation, otherwise use capitalized raw input
+    search_term = mapping.get(raw_region.lower(), raw_region)
 
-    # 4. Train the model on this specific window
+    # 3. Flexible Filter (Finds 'india' or 'India' or 'INDIA')
+    # We use a case-insensitive regex to match the Country/Region column
+    mask = df['Country/Region'].str.fullmatch(search_term, case=False)
+    country_df = df[mask]
+
+    if country_df.empty:
+        return jsonify({
+            "error": "Country not found",
+            "received": raw_region,
+            "tried_searching_for": search_term,
+            "tip": "Try 'US' or 'United Kingdom' or 'Brazil'"
+        }), 404
+    
+    # 4. Logic stays the same (Sum all regions for that country)
+    full_data = country_df.iloc[:, 4:].sum()
+    y = full_data.values[-100:] 
+    
+    X = np.arange(len(y)).reshape(-1, 1)
     model = LinearRegression()
     model.fit(X, y)
     
-    # 5. Predict for (100 + days_ahead)
     future_day_index = len(y) + days_ahead
-    prediction_raw = model.predict([[future_day_index]])[0]
-    
-    # Ensure prediction isn't negative
-    prediction_final = int(max(0, prediction_raw))
+    prediction = model.predict([[future_day_index]])[0]
 
-    # 6. Return JSON with a timestamp to prove it's new
     return jsonify({
-        "status": "Success - New Logic Active",
-        "timestamp": time.time(),
-        "country": region,
+        "status": "Success - Logic Fixed",
+        "country_found": search_term,
         "current_cases": int(y[-1]),
-        "prediction": prediction_final,
-        "increase": prediction_final - int(y[-1])
+        "prediction": int(max(0, prediction)),
+        "increase": int(max(0, prediction) - y[-1])
     })
 
 if __name__ == '__main__':
